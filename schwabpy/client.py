@@ -78,8 +78,8 @@ class SchwabClient:
         # Initialize session
         self._session = requests.Session()
         self._session.headers.update({
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
+            'Accept': 'application/json'
+            # Note: Content-Type is set per-request only for POST/PUT/PATCH
         })
 
         # Initialize API modules
@@ -195,6 +195,11 @@ class SchwabClient:
         headers = {
             'Authorization': f'Bearer {access_token}'
         }
+
+        # Add Content-Type for requests with body
+        if method in ['POST', 'PUT', 'PATCH'] and json is not None:
+            headers['Content-Type'] = 'application/json'
+
         if 'headers' in kwargs:
             headers.update(kwargs.pop('headers'))
 
