@@ -200,7 +200,13 @@ class SchwabClient:
 
         # Make request
         try:
-            logger.debug(f"{method} {url}")
+            logger.info(f"{method} {url}")
+            if params:
+                logger.info(f"Query params: {params}")
+            if json:
+                logger.info(f"JSON body: {json}")
+            logger.info(f"Headers: Authorization=Bearer {access_token[:20]}...")
+
             response = self._session.request(
                 method=method,
                 url=url,
@@ -210,6 +216,13 @@ class SchwabClient:
                 timeout=self.timeout,
                 **kwargs
             )
+
+            logger.info(f"Response status: {response.status_code}")
+            logger.info(f"Response headers: {dict(response.headers)}")
+            try:
+                logger.info(f"Response body: {response.text[:500]}")
+            except:
+                pass
 
             # Handle response
             return self._handle_response(response)
