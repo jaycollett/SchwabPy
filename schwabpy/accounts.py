@@ -61,7 +61,7 @@ class Accounts:
             params['fields'] = fields
 
         endpoint = "/trader/v1/accounts"
-        response = self.session.get(endpoint)
+        response = self.session.get(endpoint, params=params)
 
         accounts = []
         for account_data in response:
@@ -93,7 +93,7 @@ class Accounts:
             params['fields'] = fields
 
         endpoint = f"/trader/v1/accounts/{account_number}"
-        response = self.session.get(endpoint)
+        response = self.session.get(endpoint, params=params)
 
         return Account.from_dict(response)
 
