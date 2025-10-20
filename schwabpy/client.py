@@ -205,12 +205,12 @@ class SchwabClient:
 
         # Make request
         try:
-            logger.info(f"{method} {url}")
+            logger.debug(f"{method} {url}")
             if params:
-                logger.info(f"Query params: {params}")
+                logger.debug(f"Query params: {params}")
             if json:
-                logger.info(f"JSON body: {json}")
-            logger.info(f"Headers: Authorization=Bearer {access_token[:20]}...")
+                logger.debug(f"JSON body: {json}")
+            logger.debug(f"Headers: Authorization=Bearer {access_token[:20]}...")
 
             response = self._session.request(
                 method=method,
@@ -222,12 +222,13 @@ class SchwabClient:
                 **kwargs
             )
 
-            logger.info(f"Response status: {response.status_code}")
-            logger.info(f"Response headers: {dict(response.headers)}")
-            try:
-                logger.info(f"Response body: {response.text[:500]}")
-            except:
-                pass
+            logger.debug(f"Response status: {response.status_code}")
+            logger.debug(f"Response headers: {dict(response.headers)}")
+            if response.status_code >= 400:
+                # Log error responses at warning level for debugging
+                logger.warning(f"API error response ({response.status_code}): {response.text[:500]}")
+            else:
+                logger.debug(f"Response body: {response.text[:500]}")
 
             # Handle response
             return self._handle_response(response)
