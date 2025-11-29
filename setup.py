@@ -11,13 +11,13 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
     requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
 
 setup(
-    name="schwabpy",
-    version="0.2.0",
+    name="schwab-client",
+    version="2.0.0",
     author="SchwabPy Contributors",
     description="Python library for Charles Schwab API",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/schwabpy",
+    url="https://github.com/jaycollett/schwabpy",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",

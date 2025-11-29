@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "schwab-client"
+version = "2.0.0"
+description = "Python library for Charles Schwab API"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+authors = [
+    {name = "SchwabPy Contributors"}
+]
+keywords = ["schwab", "trading", "stocks", "options", "api", "finance"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "requests>=2.31.0",
+    "cryptography>=41.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/jaycollett/schwabpy"
+Repository = "https://github.com/jaycollett/schwabpy"
+Issues = "https://github.com/jaycollett/schwabpy/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["schwabpy*"]
+exclude = ["tests*", "examples*"]

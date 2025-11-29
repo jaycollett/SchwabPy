@@ -21,7 +21,7 @@ from .exceptions import (
     ServerError
 )
 
-__version__ = "0.2.0"
+__version__ = "2.0.0"
 __author__ = "SchwabPy Contributors"
 __all__ = [
     # Main client
