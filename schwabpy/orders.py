@@ -6,6 +6,16 @@ import logging
 from typing import Dict, Any, Optional
 
 from .models import Order
+from .utils import (
+    validate_symbol,
+    validate_quantity,
+    validate_price,
+    validate_account_hash,
+    validate_order_instruction,
+    validate_order_type,
+    validate_order_session,
+    validate_order_duration
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +43,9 @@ class Orders:
         Returns:
             Response dictionary with order ID in headers
 
+        Raises:
+            ValueError: If account_number is invalid
+
         Example:
             >>> order_spec = {
             ...     "orderType": "MARKET",
@@ -50,6 +63,7 @@ class Orders:
             ... }
             >>> result = client.orders.place_order(account_hash, order_spec)
         """
+        account_number = validate_account_hash(account_number)
         endpoint = f"/trader/v1/accounts/{account_number}/orders"
         response = self.session.post(endpoint, json=order)
 
@@ -72,10 +86,17 @@ class Orders:
         Returns:
             Response dictionary
 
+        Raises:
+            ValueError: If account_number or order_id is invalid
+
         Example:
             >>> new_order = {...}  # Modified order specification
             >>> result = client.orders.replace_order(account_hash, "12345", new_order)
         """
+        account_number = validate_account_hash(account_number)
+        if not order_id or not isinstance(order_id, str):
+            raise ValueError("Order ID must be a non-empty string")
+
         endpoint = f"/trader/v1/accounts/{account_number}/orders/{order_id}"
         response = self.session.put(endpoint, json=order)
 
@@ -92,9 +113,16 @@ class Orders:
         Returns:
             Response dictionary
 
+        Raises:
+            ValueError: If account_number or order_id is invalid
+
         Example:
             >>> result = client.orders.cancel_order(account_hash, "12345")
         """
+        account_number = validate_account_hash(account_number)
+        if not order_id or not isinstance(order_id, str):
+            raise ValueError("Order ID must be a non-empty string")
+
         endpoint = f"/trader/v1/accounts/{account_number}/orders/{order_id}"
         response = self.session.delete(endpoint)
 
@@ -111,9 +139,13 @@ class Orders:
         Returns:
             Preview response dictionary
 
+        Raises:
+            ValueError: If account_number is invalid
+
         Note:
             This endpoint may not be available in all API versions.
         """
+        account_number = validate_account_hash(account_number)
         endpoint = f"/trader/v1/accounts/{account_number}/previewOrder"
         response = self.session.post(endpoint, json=order)
 
@@ -148,9 +180,35 @@ class Orders:
         Returns:
             Order specification dictionary
 
+        Raises:
+            ValueError: If any parameter is invalid
+
         Example:
             >>> order = Orders.build_equity_order("AAPL", 10, "BUY", "LIMIT", price=150.00)
         """
+        # Validate all inputs
+        symbol = validate_symbol(symbol)
+        quantity = validate_quantity(quantity)
+        instruction = validate_order_instruction(instruction, "EQUITY")
+        order_type = validate_order_type(order_type)
+        session = validate_order_session(session)
+        duration = validate_order_duration(duration)
+
+        # Validate price if provided
+        if price is not None:
+            price = validate_price(price, allow_zero=False)
+
+        # Validate stop_price if provided
+        if stop_price is not None:
+            stop_price = validate_price(stop_price, allow_zero=False)
+
+        # Validate required fields for specific order types
+        if order_type in ("LIMIT", "STOP_LIMIT") and price is None:
+            raise ValueError(f"Price is required for {order_type} orders")
+
+        if order_type in ("STOP", "STOP_LIMIT") and stop_price is None:
+            raise ValueError(f"Stop price is required for {order_type} orders")
+
         order = {
             "orderType": order_type,
             "session": session,
@@ -161,7 +219,7 @@ class Orders:
                     "instruction": instruction,
                     "quantity": quantity,
                     "instrument": {
-                        "symbol": symbol.upper(),
+                        "symbol": symbol,
                         "assetType": "EQUITY"
                     }
                 }
@@ -203,6 +261,9 @@ class Orders:
         Returns:
             Order specification dictionary
 
+        Raises:
+            ValueError: If any parameter is invalid
+
         Example:
             >>> order = Orders.build_option_order(
             ...     "AAPL 240315C00150000",
@@ -212,6 +273,29 @@ class Orders:
             ...     price=5.50
             ... )
         """
+        # Validate all inputs
+        symbol = validate_symbol(symbol)
+        quantity = validate_quantity(quantity)
+        instruction = validate_order_instruction(instruction, "OPTION")
+        order_type = validate_order_type(order_type)
+        session = validate_order_session(session)
+        duration = validate_order_duration(duration)
+
+        # Validate price if provided
+        if price is not None:
+            price = validate_price(price, allow_zero=False)
+
+        # Validate stop_price if provided
+        if stop_price is not None:
+            stop_price = validate_price(stop_price, allow_zero=False)
+
+        # Validate required fields for specific order types
+        if order_type in ("LIMIT", "STOP_LIMIT", "NET_DEBIT", "NET_CREDIT") and price is None:
+            raise ValueError(f"Price is required for {order_type} orders")
+
+        if order_type in ("STOP", "STOP_LIMIT") and stop_price is None:
+            raise ValueError(f"Stop price is required for {order_type} orders")
+
         order = {
             "orderType": order_type,
             "session": session,
@@ -223,7 +307,7 @@ class Orders:
                     "instruction": instruction,
                     "quantity": quantity,
                     "instrument": {
-                        "symbol": symbol.upper(),
+                        "symbol": symbol,
                         "assetType": "OPTION"
                     }
                 }
@@ -259,6 +343,9 @@ class Orders:
         Returns:
             Order specification dictionary
 
+        Raises:
+            ValueError: If any parameter is invalid
+
         Example:
             >>> legs = [
             ...     {"symbol": "AAPL 240315C00150000", "quantity": 1, "instruction": "BUY_TO_OPEN"},
@@ -266,14 +353,49 @@ class Orders:
             ... ]
             >>> order = Orders.build_spread_order(legs, "NET_DEBIT", price=2.50)
         """
+        # Validate order parameters
+        order_type = validate_order_type(order_type)
+        session = validate_order_session(session)
+        duration = validate_order_duration(duration)
+
+        if price is not None:
+            price = validate_price(price, allow_zero=False)
+
+        # Validate required fields for specific order types
+        if order_type in ("LIMIT", "NET_DEBIT", "NET_CREDIT") and price is None:
+            raise ValueError(f"Price is required for {order_type} orders")
+
+        # Validate legs
+        if not legs or not isinstance(legs, list):
+            raise ValueError("Legs must be a non-empty list")
+
+        if len(legs) < 2:
+            raise ValueError("Spread orders require at least 2 legs")
+
         order_legs = []
-        for leg in legs:
+        for i, leg in enumerate(legs):
+            if not isinstance(leg, dict):
+                raise ValueError(f"Leg {i} must be a dictionary")
+
+            if "symbol" not in leg:
+                raise ValueError(f"Leg {i} missing required field 'symbol'")
+            if "quantity" not in leg:
+                raise ValueError(f"Leg {i} missing required field 'quantity'")
+            if "instruction" not in leg:
+                raise ValueError(f"Leg {i} missing required field 'instruction'")
+
+            # Validate each leg's fields
+            symbol = validate_symbol(leg["symbol"])
+            quantity = validate_quantity(leg["quantity"])
+            asset_type = leg.get("assetType", "OPTION")
+            instruction = validate_order_instruction(leg["instruction"], asset_type)
+
             order_legs.append({
-                "instruction": leg["instruction"],
-                "quantity": leg["quantity"],
+                "instruction": instruction,
+                "quantity": quantity,
                 "instrument": {
-                    "symbol": leg["symbol"].upper(),
-                    "assetType": leg.get("assetType", "OPTION")
+                    "symbol": symbol,
+                    "assetType": asset_type
                 }
             })
 

@@ -31,45 +31,30 @@ class Account:
 
 @dataclass
 class Position:
-    """Represents a position in a portfolio."""
+    """Represents a position in a portfolio - provides raw API data."""
     symbol: str
     asset_type: str
-    quantity: float
+    long_quantity: float
+    short_quantity: float
     average_price: float
     market_value: float
-    current_price: Optional[float] = None
-    long_quantity: Optional[float] = None
-    short_quantity: Optional[float] = None
+    current_day_profit_loss: Optional[float] = None
     instrument: Optional[Dict[str, Any]] = None
     raw_data: Dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def unrealized_pl(self) -> Optional[float]:
-        """Calculate unrealized profit/loss."""
-        if self.current_price and self.average_price:
-            return (self.current_price - self.average_price) * self.quantity
-        return None
-
-    @property
-    def unrealized_pl_percent(self) -> Optional[float]:
-        """Calculate unrealized profit/loss percentage."""
-        if self.unrealized_pl and self.average_price:
-            return (self.unrealized_pl / (self.average_price * self.quantity)) * 100
-        return None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Position':
         """Create Position from API response dictionary."""
         instrument = data.get('instrument', {})
+
         return cls(
             symbol=instrument.get('symbol', ''),
             asset_type=instrument.get('assetType', ''),
-            quantity=data.get('longQuantity', 0) - data.get('shortQuantity', 0),
+            long_quantity=data.get('longQuantity', 0),
+            short_quantity=data.get('shortQuantity', 0),
             average_price=data.get('averagePrice', 0),
             market_value=data.get('marketValue', 0),
-            current_price=data.get('currentDayProfitLoss'),
-            long_quantity=data.get('longQuantity'),
-            short_quantity=data.get('shortQuantity'),
+            current_day_profit_loss=data.get('currentDayProfitLoss'),
             instrument=instrument,
             raw_data=data
         )

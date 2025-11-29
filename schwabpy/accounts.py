@@ -6,6 +6,7 @@ import logging
 from typing import List, Dict, Optional, Any
 
 from .models import Account, Position, Balance, Order
+from .utils import validate_account_hash, validate_date_format
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +85,15 @@ class Accounts:
         Returns:
             Account object
 
+        Raises:
+            ValueError: If account_number is invalid
+
         Example:
             >>> account = client.accounts.get_account(account_hash, fields="positions")
             >>> print(f"Account type: {account.account_type}")
         """
+        account_number = validate_account_hash(account_number)
+
         params = {}
         if fields:
             params['fields'] = fields
@@ -107,11 +113,15 @@ class Accounts:
         Returns:
             List of Position objects
 
+        Raises:
+            ValueError: If account_number is invalid
+
         Example:
             >>> positions = client.accounts.get_positions(account_hash)
             >>> for pos in positions:
             ...     print(f"{pos.symbol}: {pos.quantity} @ ${pos.average_price}")
         """
+        # Validation happens in get_account
         account = self.get_account(account_number, fields="positions")
 
         positions = []
@@ -133,11 +143,15 @@ class Accounts:
         Returns:
             Balance object
 
+        Raises:
+            ValueError: If account_number is invalid
+
         Example:
             >>> balance = client.accounts.get_balance(account_hash)
             >>> print(f"Cash: ${balance.cash_balance}")
             >>> print(f"Buying Power: ${balance.buying_power}")
         """
+        # Validation happens in get_account
         account = self.get_account(account_number)
 
         secure_account = account.raw_data.get('securitiesAccount', {})
@@ -164,11 +178,16 @@ class Accounts:
         Returns:
             List of Order objects
 
+        Raises:
+            ValueError: If account_number is invalid
+
         Example:
             >>> orders = client.accounts.get_orders(account_hash, status="WORKING")
             >>> for order in orders:
             ...     print(f"Order {order.order_id}: {order.status}")
         """
+        account_number = validate_account_hash(account_number)
+
         params = {
             'maxResults': max_results
         }
@@ -199,10 +218,17 @@ class Accounts:
         Returns:
             Order object
 
+        Raises:
+            ValueError: If account_number or order_id is invalid
+
         Example:
             >>> order = client.accounts.get_order(account_hash, "12345")
             >>> print(f"Status: {order.status}")
         """
+        account_number = validate_account_hash(account_number)
+        if not order_id or not isinstance(order_id, str):
+            raise ValueError("Order ID must be a non-empty string")
+
         endpoint = f"/trader/v1/accounts/{account_number}/orders/{order_id}"
         response = self.session.get(endpoint)
 
@@ -270,6 +296,9 @@ class Accounts:
         Returns:
             List of transaction dictionaries
 
+        Raises:
+            ValueError: If account_number or date formats are invalid
+
         Example:
             >>> transactions = client.accounts.get_transactions(
             ...     account_hash,
@@ -277,6 +306,10 @@ class Accounts:
             ...     end_date="2024-01-31"
             ... )
         """
+        account_number = validate_account_hash(account_number)
+        start_date = validate_date_format(start_date, "yyyy-MM-dd")
+        end_date = validate_date_format(end_date, "yyyy-MM-dd")
+
         params = {
             'startDate': start_date,
             'endDate': end_date
@@ -306,9 +339,16 @@ class Accounts:
         Returns:
             Transaction dictionary
 
+        Raises:
+            ValueError: If account_number or transaction_id is invalid
+
         Example:
             >>> transaction = client.accounts.get_transaction(account_hash, "12345")
         """
+        account_number = validate_account_hash(account_number)
+        if not transaction_id or not isinstance(transaction_id, str):
+            raise ValueError("Transaction ID must be a non-empty string")
+
         endpoint = f"/trader/v1/accounts/{account_number}/transactions/{transaction_id}"
         response = self.session.get(endpoint)
 

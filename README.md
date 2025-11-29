@@ -5,11 +5,16 @@ A Python library for accessing the Charles Schwab Trading and Market Data APIs. 
 ## Features
 
 - 🔐 **OAuth 2.0 Authentication** - Automatic token management and refresh
+- 🔒 **Secure Token Storage** - Tokens stored with secure file permissions (0600)
 - 📊 **Market Data** - Real-time quotes, price history, option chains, and more
 - 💼 **Account Management** - View accounts, positions, balances, and transactions
 - 📈 **Trading** - Place, modify, and cancel orders (equities and options)
 - 🔄 **Auto Token Refresh** - Tokens are automatically refreshed when needed
+- ⚡ **Rate Limiting** - Built-in rate limiting (120 req/min default, configurable)
+- 🔁 **Automatic Retries** - Exponential backoff for transient network errors
+- ✅ **Input Validation** - Comprehensive validation of all parameters
 - 🎯 **Type Hints** - Full type hint support for better IDE integration
+- 🧪 **Tested** - 47+ unit tests ensuring reliability
 - 📝 **Comprehensive Documentation** - Clear examples and API references
 
 ## Installation
@@ -99,9 +104,11 @@ print(f"Buying Power: ${balance.buying_power:,.2f}")
 # Get positions
 positions = client.accounts.get_positions(account_hash)
 for position in positions:
-    print(f"{position.symbol}: {position.quantity} shares @ ${position.average_price}")
-    if position.unrealized_pl:
-        print(f"  P&L: ${position.unrealized_pl:.2f} ({position.unrealized_pl_percent:.2f}%)")
+    # Position provides raw API data - you can calculate metrics as needed
+    quantity = position.long_quantity - position.short_quantity
+    print(f"{position.symbol}: {quantity} shares @ ${position.average_price}")
+    print(f"  Market Value: ${position.market_value:,.2f}")
+    print(f"  Day P&L: ${position.current_day_profit_loss:,.2f}")
 ```
 
 ### 4. Get Price History
@@ -283,7 +290,7 @@ spread = Orders.build_spread_order(legs, "NET_DEBIT", price=2.50)
 The library provides clean data models for API responses:
 
 - **Account**: Account information
-- **Position**: Portfolio position
+- **Position**: Portfolio position with raw API data
 - **Balance**: Account balance details
 - **Quote**: Real-time quote data
 - **Instrument**: Financial instrument details
@@ -292,8 +299,34 @@ The library provides clean data models for API responses:
 
 All models include:
 - Clean attribute access (e.g., `quote.last_price`)
-- Raw data access (`.raw_data` property)
+- Raw data access (`.raw_data` property for complete API response)
 - Type hints for better IDE support
+
+**Important**: Models provide raw API data without calculations. This allows you to:
+- Perform your own calculations based on your requirements
+- Avoid assumptions made by the library
+- Access complete API response data via `.raw_data`
+
+Example with Position:
+```python
+position = positions[0]
+
+# Raw API fields
+print(position.long_quantity)      # e.g., 100.0
+print(position.short_quantity)     # e.g., 0.0
+print(position.average_price)      # e.g., 150.0
+print(position.market_value)       # e.g., 16000.0
+print(position.current_day_profit_loss)  # e.g., 500.0
+
+# You can calculate derived metrics as needed
+net_quantity = position.long_quantity - position.short_quantity
+cost_basis = position.average_price * net_quantity
+unrealized_pl = position.market_value - cost_basis
+unrealized_pl_pct = (unrealized_pl / cost_basis) * 100 if cost_basis != 0 else 0
+
+# Access complete API response
+full_data = position.raw_data
+```
 
 ## Authentication Details
 
@@ -314,29 +347,63 @@ SchwabPy uses OAuth 2.0 for authentication:
 
 ### Security Best Practices
 
-1. **Never commit tokens**: Add `.schwab_tokens.json` to `.gitignore`
-2. **Keep secrets secure**: Don't hardcode App Key/Secret in code
-3. **Use environment variables**: Store credentials in env vars or config files
+1. **Secure Token Storage**: Tokens are automatically saved with secure permissions (0600 - owner read/write only)
+2. **Never commit tokens**: Add `.schwab_tokens.json` to `.gitignore` (already included)
+3. **Keep secrets secure**: Don't hardcode App Key/Secret in code
+4. **Use environment variables**: Store credentials in env vars or config files
+5. **Use context managers**: Properly cleanup resources
 
 ```python
 import os
 
+# Using environment variables
 client = SchwabClient(
     client_id=os.getenv("SCHWAB_APP_KEY"),
     client_secret=os.getenv("SCHWAB_APP_SECRET"),
     redirect_uri="https://127.0.0.1"
 )
+
+# Or use as context manager for automatic cleanup
+with SchwabClient(
+    client_id=os.getenv("SCHWAB_APP_KEY"),
+    client_secret=os.getenv("SCHWAB_APP_SECRET")
+) as client:
+    quote = client.market_data.get_quote("AAPL")
+    # Client resources are automatically cleaned up when exiting
+```
+
+**Note**: If you see a warning about insecure token file permissions, run:
+```bash
+chmod 600 .schwab_tokens.json
 ```
 
 ## Rate Limits
 
-The Schwab API has rate limits:
+The Schwab API has rate limits, and this library includes **built-in rate limiting protection**:
 
-- **Order endpoints**: 0-120 requests per minute per account (configured per app)
+- **Automatic Rate Limiting**: The client automatically limits requests to 120 per minute (configurable)
+- **No Manual Throttling**: You don't need to add delays between requests
+- **Transparent Sleep**: When the limit is reached, the client automatically sleeps
+
+```python
+# Configure rate limiting (default is 120 req/min)
+client = SchwabClient(
+    client_id="YOUR_APP_KEY",
+    client_secret="YOUR_APP_SECRET",
+    rate_limit_per_minute=120  # Adjust based on your app's limits
+)
+
+# Make requests normally - rate limiting is automatic
+for symbol in ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA"]:
+    quote = client.market_data.get_quote(symbol)  # Automatically rate limited
+```
+
+**Schwab API Limits** (vary by app configuration):
+- **Order endpoints**: Typically 0-120 requests per minute per account
 - **Market data**: Generally higher limits
 - **Account data**: Standard REST API limits
 
-The library will raise `RateLimitError` when limits are exceeded.
+The library will raise `RateLimitError` if the API returns a 429 status code.
 
 ## Error Handling
 

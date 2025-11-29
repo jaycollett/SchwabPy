@@ -4,6 +4,9 @@ OAuth 2.0 authentication for Schwab API.
 
 import json
 import logging
+import os
+import tempfile
+import shutil
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -27,13 +30,15 @@ class OAuthManager:
     # Token validity periods
     ACCESS_TOKEN_LIFETIME = 1800  # 30 minutes in seconds
     REFRESH_TOKEN_LIFETIME = 604800  # 7 days in seconds
+    REQUEST_TIMEOUT = 30  # Timeout for token requests in seconds
 
     def __init__(
         self,
         client_id: str,
         client_secret: str,
         redirect_uri: str,
-        token_file: Optional[str] = None
+        token_file: Optional[str] = None,
+        timeout: int = 30
     ):
         """
         Initialize OAuth manager.
@@ -43,11 +48,13 @@ class OAuthManager:
             client_secret: OAuth client secret (App Secret)
             redirect_uri: OAuth redirect URI (callback URL)
             token_file: Path to store tokens (default: .schwab_tokens.json)
+            timeout: Request timeout in seconds (default: 30)
         """
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
         self.token_file = Path(token_file or ".schwab_tokens.json")
+        self.timeout = timeout
 
         self._access_token: Optional[str] = None
         self._refresh_token: Optional[str] = None
@@ -99,7 +106,12 @@ class OAuthManager:
         }
 
         try:
-            response = requests.post(self.TOKEN_URL, headers=headers, data=data)
+            response = requests.post(
+                self.TOKEN_URL,
+                headers=headers,
+                data=data,
+                timeout=self.timeout
+            )
             response.raise_for_status()
             token_data = response.json()
 
@@ -108,6 +120,10 @@ class OAuthManager:
 
             return token_data
 
+        except requests.exceptions.Timeout:
+            error_msg = f"Token request timed out after {self.timeout} seconds"
+            logger.error(error_msg)
+            raise AuthenticationError(error_msg)
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to fetch access token: {e}")
             if hasattr(e, 'response') and e.response is not None:
@@ -141,7 +157,12 @@ class OAuthManager:
         }
 
         try:
-            response = requests.post(self.TOKEN_URL, headers=headers, data=data)
+            response = requests.post(
+                self.TOKEN_URL,
+                headers=headers,
+                data=data,
+                timeout=self.timeout
+            )
             response.raise_for_status()
             token_data = response.json()
 
@@ -150,6 +171,10 @@ class OAuthManager:
 
             return token_data
 
+        except requests.exceptions.Timeout:
+            error_msg = f"Token refresh request timed out after {self.timeout} seconds"
+            logger.error(error_msg)
+            raise AuthenticationError(error_msg)
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to refresh access token: {e}")
             if hasattr(e, 'response') and e.response is not None:
@@ -209,7 +234,7 @@ class OAuthManager:
         return datetime.now() >= self._refresh_token_expiry
 
     def _save_tokens(self):
-        """Save tokens to file."""
+        """Save tokens to file with secure permissions (0600)."""
         token_data = {
             "access_token": self._access_token,
             "refresh_token": self._refresh_token,
@@ -218,17 +243,65 @@ class OAuthManager:
         }
 
         try:
-            with open(self.token_file, 'w') as f:
-                json.dump(token_data, f, indent=2)
-            logger.debug(f"Tokens saved to {self.token_file}")
+            # Create parent directory if it doesn't exist
+            self.token_file.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write to temporary file first with secure permissions
+            fd, temp_path = tempfile.mkstemp(dir=self.token_file.parent, text=True)
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(token_data, f, indent=2)
+
+                # Set secure permissions (0600 = rw-------)
+                # Only owner can read/write, no permissions for group or others
+                os.chmod(temp_path, 0o600)
+
+                # Move to final location (atomic operation on most filesystems)
+                shutil.move(temp_path, str(self.token_file))
+
+                logger.debug(f"Tokens saved to {self.token_file} with secure permissions")
+
+                # Verify permissions were set correctly
+                self._check_token_file_security()
+
+            except Exception:
+                # Clean up temp file if something went wrong
+                try:
+                    os.unlink(temp_path)
+                except Exception:
+                    pass
+                raise
+
         except Exception as e:
             logger.warning(f"Failed to save tokens: {e}")
+            raise
+
+    def _check_token_file_security(self):
+        """Verify token file has secure permissions."""
+        if not self.token_file.exists():
+            return
+
+        try:
+            stat_info = self.token_file.stat()
+            permissions = stat_info.st_mode & 0o777
+
+            if permissions != 0o600:
+                logger.warning(
+                    f"Token file has insecure permissions: {oct(permissions)}. "
+                    f"Recommended: 0o600 (rw-------). "
+                    f"Run: chmod 600 {self.token_file}"
+                )
+        except Exception as e:
+            logger.debug(f"Could not check token file permissions: {e}")
 
     def _load_tokens(self):
         """Load tokens from file."""
         if not self.token_file.exists():
             logger.debug("No token file found")
             return
+
+        # Check security of existing token file
+        self._check_token_file_security()
 
         try:
             with open(self.token_file, 'r') as f:
