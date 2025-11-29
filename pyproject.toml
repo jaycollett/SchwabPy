@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "schwab-client"
-version = "2.0.0"
+version = "2.0.1"
 description = "Python library for Charles Schwab API"
 readme = "README.md"
 requires-python = ">=3.8"

@@ -1,6 +1,13 @@
 # SchwabPy
 
+[![PyPI version](https://badge.fury.io/py/schwab-client.svg)](https://badge.fury.io/py/schwab-client)
+[![Python Versions](https://img.shields.io/pypi/pyversions/schwab-client.svg)](https://pypi.org/project/schwab-client/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Downloads](https://pepy.tech/badge/schwab-client)](https://pepy.tech/project/schwab-client)
+
 A Python library for accessing the Charles Schwab Trading and Market Data APIs. This library provides a simple and intuitive interface for retrieving market data, managing accounts, viewing portfolios, and placing trades.
+
+**[Quick Start Guide](QUICKSTART.md)** | **[Full Documentation](#api-reference)** | **[Examples](examples/)** | **[Changelog](CHANGELOG.md)**
 
 ## Features
 

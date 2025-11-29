@@ -12,7 +12,7 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="schwab-client",
-    version="2.0.0",
+    version="2.0.1",
     author="SchwabPy Contributors",
     description="Python library for Charles Schwab API",
     long_description=long_description,
