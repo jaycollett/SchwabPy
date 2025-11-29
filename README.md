@@ -19,15 +19,17 @@ A Python library for accessing the Charles Schwab Trading and Market Data APIs. 
 
 ## Installation
 
+Install from PyPI (recommended):
+
 ```bash
-pip install -r requirements.txt
+pip install schwab-client
 ```
 
 Or install from source:
 
 ```bash
-git clone https://github.com/yourusername/schwabpy.git
-cd schwabpy
+git clone https://github.com/jaycollett/SchwabPy.git
+cd SchwabPy
 pip install -e .
 ```
 
