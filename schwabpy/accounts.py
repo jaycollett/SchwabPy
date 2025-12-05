@@ -280,42 +280,56 @@ class Accounts:
         account_number: str,
         start_date: str,
         end_date: str,
-        types: Optional[str] = None,
+        types: str,
         symbol: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Get account transactions.
 
+        IMPORTANT: According to official Schwab API documentation, the 'types' parameter is REQUIRED.
+
         Args:
             account_number: Account number (encrypted hash)
-            start_date: Start date (yyyy-MM-dd)
-            end_date: End date (yyyy-MM-dd)
-            types: Transaction types (comma-separated)
-            symbol: Filter by symbol
+            start_date: Start date in ISO 8601 format (yyyy-MM-dd'T'HH:mm:ss.SSSZ)
+            end_date: End date in ISO 8601 format (yyyy-MM-dd'T'HH:mm:ss.SSSZ)
+            types: REQUIRED. Transaction types (comma-separated). Valid values:
+                TRADE, RECEIVE_AND_DELIVER, DIVIDEND_OR_INTEREST, ACH_RECEIPT,
+                ACH_DISBURSEMENT, CASH_RECEIPT, CASH_DISBURSEMENT, ELECTRONIC_FUND,
+                WIRE_OUT, WIRE_IN, JOURNAL, MEMORANDUM, MARGIN_CALL, MONEY_MARKET,
+                SMA_ADJUSTMENT
+            symbol: Optional. Filter by symbol
 
         Returns:
             List of transaction dictionaries
 
         Raises:
-            ValueError: If account_number or date formats are invalid
+            ValueError: If account_number, date formats, or types are invalid
+
+        Note:
+            - Maximum date range is 1 year
+            - Dates must be in ISO 8601 format with time component
+            - The 'types' parameter is REQUIRED by the Schwab API
 
         Example:
             >>> transactions = client.accounts.get_transactions(
             ...     account_hash,
-            ...     start_date="2024-01-01",
-            ...     end_date="2024-01-31"
+            ...     start_date="2024-01-01T00:00:00.000Z",
+            ...     end_date="2024-01-31T23:59:59.999Z",
+            ...     types="TRADE,DIVIDEND_OR_INTEREST"
             ... )
         """
         account_number = validate_account_hash(account_number)
         start_date = validate_date_format(start_date, "yyyy-MM-dd")
         end_date = validate_date_format(end_date, "yyyy-MM-dd")
 
+        if not types or not isinstance(types, str):
+            raise ValueError("The 'types' parameter is required by the Schwab API")
+
         params = {
             'startDate': start_date,
-            'endDate': end_date
+            'endDate': end_date,
+            'types': types
         }
-        if types:
-            params['types'] = types
         if symbol:
             params['symbol'] = symbol
 
