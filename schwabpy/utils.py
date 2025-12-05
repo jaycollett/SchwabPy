@@ -356,10 +356,11 @@ def validate_date_format(date_str: str, format_desc: str = "yyyy-MM-dd") -> str:
     date_str = date_str.strip()
 
     # Basic validation for yyyy-MM-dd format
+    # Also accept ISO 8601 format with time component (YYYY-MM-DDTHH:MM:SS.sssZ)
     if format_desc == "yyyy-MM-dd":
-        if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+        if not re.match(r'^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}\.\d{3}Z)?$', date_str):
             raise ValueError(
-                f"Invalid date format: {date_str}. Expected format: yyyy-MM-dd"
+                f"Invalid date format: {date_str}. Expected format: yyyy-MM-dd or yyyy-MM-ddTHH:MM:SS.sssZ"
             )
 
     return date_str
