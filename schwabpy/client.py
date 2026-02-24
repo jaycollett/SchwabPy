@@ -220,6 +220,10 @@ class SchwabClient:
         Raises:
             APIError: On API errors
         """
+        # Guard against use after close()
+        if self._session is None:
+            raise APIError("Client session is closed. Create a new SchwabClient instance.")
+
         # Enforce rate limiting
         self._check_rate_limit()
 
@@ -245,8 +249,12 @@ class SchwabClient:
         if 'headers' in kwargs:
             headers.update(kwargs.pop('headers'))
 
-        # Make request with retry logic
-        max_retries = 3
+        # Determine if this request is safe to retry. POST requests are
+        # not idempotent (e.g., placing an order twice), so we never retry
+        # them automatically. GET and DELETE are idempotent, PUT replaces
+        # state, so those are safe to retry on transient failures.
+        is_retriable_method = method.upper() != 'POST'
+        max_retries = 3 if is_retriable_method else 0
         backoff_base = 2
 
         for attempt in range(max_retries + 1):
@@ -269,22 +277,26 @@ class SchwabClient:
                     **kwargs
                 )
 
-                logger.debug(f"Response status: {response.status_code}")
-                logger.debug(f"Response headers: {dict(response.headers)}")
                 if response.status_code >= 400:
-                    # Log error responses at warning level for debugging
                     logger.warning(f"API error response ({response.status_code}): {response.text[:500]}")
                 else:
-                    logger.debug(f"Response body: {response.text[:500]}")
+                    logger.debug(f"Response {response.status_code}: {response.text[:200]}")
 
                 # Handle response
                 return self._handle_response(response)
 
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-                # These are transient errors we can retry
                 is_last_attempt = (attempt == max_retries)
 
                 if is_last_attempt:
+                    if not is_retriable_method:
+                        error_type = "timeout" if isinstance(e, requests.exceptions.Timeout) else "connection error"
+                        logger.error(
+                            f"Non-retriable {method} request failed with {error_type}: {e}. "
+                            f"POST requests are not retried to prevent duplicate side effects "
+                            f"(e.g., duplicate order placement)."
+                        )
+                        raise APIError(f"Request {error_type}: {e}")
                     logger.error(f"Request failed after {max_retries + 1} attempts: {e}")
                     error_type = "timeout" if isinstance(e, requests.exceptions.Timeout) else "connection error"
                     raise APIError(f"Request {error_type} after {max_retries + 1} attempts: {e}")
@@ -298,11 +310,16 @@ class SchwabClient:
                 time.sleep(sleep_time)
 
             except ServerError as e:
-                # 5xx errors from server - retry these too
                 is_last_attempt = (attempt == max_retries)
 
                 if is_last_attempt:
-                    logger.error(f"Server error persists after {max_retries + 1} attempts")
+                    if not is_retriable_method:
+                        logger.error(
+                            f"Non-retriable {method} request received server error: {e}. "
+                            f"POST requests are not retried to prevent duplicate side effects."
+                        )
+                    else:
+                        logger.error(f"Server error persists after {max_retries + 1} attempts")
                     raise
 
                 # Calculate backoff with jitter
@@ -334,9 +351,6 @@ class SchwabClient:
         Raises:
             APIError: On error responses
         """
-        # Log response
-        logger.debug(f"Response status: {response.status_code}")
-
         # Success responses (2xx)
         if 200 <= response.status_code < 300:
             # Some endpoints return empty body

@@ -7,6 +7,7 @@ import logging
 import os
 import tempfile
 import shutil
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -60,6 +61,11 @@ class OAuthManager:
         self._refresh_token: Optional[str] = None
         self._token_expiry: Optional[datetime] = None
         self._refresh_token_expiry: Optional[datetime] = None
+
+        # Lock for thread-safe token refresh. Prevents multiple threads
+        # from simultaneously detecting a stale token and all attempting
+        # to refresh, which could cause race conditions or wasted requests.
+        self._token_lock = threading.Lock()
 
         # Try to load existing tokens
         self._load_tokens()
@@ -185,20 +191,30 @@ class OAuthManager:
         """
         Get a valid access token, refreshing if necessary.
 
+        Thread-safe: uses double-checked locking so that only one thread
+        performs the refresh while others wait and then use the new token.
+
         Returns:
             Valid access token
 
         Raises:
             AuthenticationError: If unable to get valid token
         """
-        # Check if we need to refresh
-        if self._should_refresh_token():
-            try:
-                self.refresh_access_token()
-            except TokenExpiredError:
-                raise AuthenticationError(
-                    "Refresh token expired. Please re-authenticate using authorization flow."
-                )
+        # Fast path: token is still valid, no lock needed
+        if not self._should_refresh_token() and self._access_token:
+            return self._access_token
+
+        # Slow path: acquire lock and double-check before refreshing
+        with self._token_lock:
+            # Re-check after acquiring lock — another thread may have
+            # already refreshed while we were waiting
+            if self._should_refresh_token():
+                try:
+                    self.refresh_access_token()
+                except TokenExpiredError:
+                    raise AuthenticationError(
+                        "Refresh token expired. Please re-authenticate using authorization flow."
+                    )
 
         if not self._access_token:
             raise AuthenticationError("No access token available. Please authenticate first.")
