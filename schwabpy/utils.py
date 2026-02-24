@@ -5,8 +5,7 @@ Utility functions for SchwabPy library.
 import base64
 import logging
 import re
-from typing import Dict, Any
-from urllib.parse import urlencode, quote
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -33,28 +32,6 @@ def encode_credentials(client_id: str, client_secret: str) -> str:
     encoded = base64.b64encode(credentials.encode()).decode()
     return encoded
 
-
-def build_url(base_url: str, endpoint: str, params: Dict[str, Any] = None) -> str:
-    """
-    Build a complete URL with query parameters.
-
-    Args:
-        base_url: Base API URL
-        endpoint: API endpoint path
-        params: Query parameters
-
-    Returns:
-        Complete URL string
-    """
-    url = f"{base_url.rstrip('/')}/{endpoint.lstrip('/')}"
-
-    if params:
-        # Filter out None values
-        filtered_params = {k: v for k, v in params.items() if v is not None}
-        if filtered_params:
-            url += f"?{urlencode(filtered_params)}"
-
-    return url
 
 
 def format_symbol(symbol: str) -> str:

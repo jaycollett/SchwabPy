@@ -4,7 +4,6 @@ Market data API operations.
 
 import logging
 from typing import Optional, Dict, List, Any
-from datetime import datetime
 
 from .models import Quote, Instrument, OptionChain
 from .utils import format_symbol
@@ -79,11 +78,7 @@ class MarketData:
         endpoint = "/marketdata/v1/quotes"
         response = self.session.get(endpoint, params=params)
 
-        quotes = {}
-        for symbol, data in response.items():
-            quotes[symbol] = Quote.from_dict(symbol, data)
-
-        return quotes
+        return {symbol: Quote.from_dict(symbol, data) for symbol, data in response.items()}
 
     def get_option_chain(
         self,
@@ -270,11 +265,7 @@ class MarketData:
         endpoint = "/marketdata/v1/instruments"
         response = self.session.get(endpoint, params=params)
 
-        instruments = {}
-        for symbol_key, data in response.items():
-            instruments[symbol_key] = Instrument.from_dict(data)
-
-        return instruments
+        return {symbol_key: Instrument.from_dict(data) for symbol_key, data in response.items()}
 
     def get_instrument(self, cusip: str) -> Instrument:
         """
