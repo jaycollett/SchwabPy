@@ -64,11 +64,7 @@ class Accounts:
         endpoint = "/trader/v1/accounts"
         response = self.session.get(endpoint, params=params)
 
-        accounts = []
-        for account_data in response:
-            accounts.append(Account.from_dict(account_data))
-
-        return accounts
+        return [Account.from_dict(account_data) for account_data in response]
 
     def get_account(
         self,
@@ -124,14 +120,9 @@ class Accounts:
         # Validation happens in get_account
         account = self.get_account(account_number, fields="positions")
 
-        positions = []
         secure_account = account.raw_data.get('securitiesAccount', {})
         position_list = secure_account.get('positions', [])
-
-        for pos_data in position_list:
-            positions.append(Position.from_dict(pos_data))
-
-        return positions
+        return [Position.from_dict(pos_data) for pos_data in position_list]
 
     def get_balance(self, account_number: str) -> Balance:
         """
@@ -201,11 +192,7 @@ class Accounts:
         endpoint = f"/trader/v1/accounts/{account_number}/orders"
         response = self.session.get(endpoint, params=params)
 
-        orders = []
-        for order_data in response:
-            orders.append(Order.from_dict(order_data))
-
-        return orders
+        return [Order.from_dict(order_data) for order_data in response]
 
     def get_order(self, account_number: str, order_id: str) -> Order:
         """
@@ -269,11 +256,7 @@ class Accounts:
         endpoint = "/trader/v1/orders"
         response = self.session.get(endpoint, params=params)
 
-        orders = []
-        for order_data in response:
-            orders.append(Order.from_dict(order_data))
-
-        return orders
+        return [Order.from_dict(order_data) for order_data in response]
 
     def get_transactions(
         self,
