@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-10-02
+
+### Added
+- `base_url` argument on `SchwabClient`. Every trader and market data request goes to `{base_url}/...`, and the default is still `https://api.schwabapi.com`.
+- `auth` argument on `SchwabClient` and an `AuthProvider` protocol with `get_headers()` and `on_unauthorized(response)`. `OAuthManager` implements it and stays the default.
+- `StaticBearerAuth(api_key)` for a Schwab API proxy. It sends `Authorization: Bearer <api_key>` and never refreshes or touches a token file. With it, `client_id` and `client_secret` are optional.
+- `ProxyAuthenticationError`, raised on a 401 or 403 when `StaticBearerAuth` is in use. It subclasses `AuthenticationError` and `APIError`.
+- `ServiceUnavailableError`, raised on any 503. It subclasses `ServerError` and carries the JSON `body` plus `state`, `sign_in_url`, and `retry_after`. A proxy 503 with `error: token_unavailable` is raised without retrying.
+- "Using a proxy" section in the README.
+
+### Fixed
+- `schwabpy.__version__` now matches the package version.
+
 ## [2.0.1] - 2025-11-28
 
 ### Changed

@@ -10,15 +10,80 @@ import shutil
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Protocol, runtime_checkable
 from urllib.parse import urlencode, parse_qs, urlparse
 
 import requests
 
-from .exceptions import AuthenticationError, TokenExpiredError
+from .exceptions import AuthenticationError, ProxyAuthenticationError, TokenExpiredError
 from .utils import encode_credentials, url_encode
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class AuthProvider(Protocol):
+    """
+    Supplies authentication headers for every API request.
+
+    SchwabClient calls ``get_headers()`` before each request and
+    ``on_unauthorized(response)`` when a response comes back 401 or 403.
+    ``on_unauthorized`` may raise to replace the default error; if it
+    returns, the client raises its usual UnauthorizedError/ForbiddenError.
+    """
+
+    def get_headers(self) -> Dict[str, str]:
+        ...
+
+    def on_unauthorized(self, response: requests.Response) -> None:
+        ...
+
+
+class StaticBearerAuth:
+    """
+    Authenticates with a fixed bearer API key, for use with a Schwab API proxy.
+
+    Sends ``Authorization: Bearer <api_key>`` on every request. It never
+    refreshes, never calls Schwab's OAuth endpoints, and never reads or
+    writes a token file. A 401 or 403 raises ProxyAuthenticationError.
+
+    Example:
+        >>> client = SchwabClient(
+        ...     base_url="https://broker.example/api/public/v1/schwab",
+        ...     auth=StaticBearerAuth("my-api-key"),
+        ... )
+    """
+
+    def __init__(self, api_key: str):
+        if not api_key or not api_key.strip():
+            raise ValueError("api_key must be a non-empty string")
+        self._api_key = api_key.strip()
+
+    def get_headers(self) -> Dict[str, str]:
+        return {"Authorization": f"Bearer {self._api_key}"}
+
+    def on_unauthorized(self, response: requests.Response) -> None:
+        body = None
+        try:
+            body = response.json()
+        except ValueError:
+            pass
+
+        detail = ""
+        if isinstance(body, dict):
+            parts = [str(body[k]) for k in ("error", "detail", "message") if body.get(k)]
+            detail = ": " + " - ".join(parts) if parts else ""
+        elif response.text:
+            detail = ": " + response.text[:200]
+
+        if response.status_code == 401:
+            message = f"Proxy rejected the API key (401){detail}"
+        else:
+            message = f"Proxy refused the request for this API key (403){detail}"
+        raise ProxyAuthenticationError(message, response.status_code, response, body)
+
+    def __repr__(self) -> str:
+        return "StaticBearerAuth(api_key=[redacted])"
 
 
 class OAuthManager:
@@ -204,6 +269,14 @@ class OAuthManager:
             raise AuthenticationError("No access token available. Please authenticate first.")
 
         return self._access_token
+
+    def get_headers(self) -> Dict[str, str]:
+        """Return the Authorization header, refreshing the token if needed."""
+        return {"Authorization": f"Bearer {self.get_access_token()}"}
+
+    def on_unauthorized(self, response: requests.Response) -> None:
+        """No special handling; the client raises UnauthorizedError/ForbiddenError."""
+        return None
 
     def _update_tokens(self, token_data: Dict[str, Any]):
         """Update internal token state and save to file."""
