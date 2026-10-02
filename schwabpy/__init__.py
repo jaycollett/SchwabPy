@@ -6,6 +6,7 @@ trading and market data APIs.
 """
 
 from .client import SchwabClient
+from .auth import AuthProvider, OAuthManager, StaticBearerAuth
 from .models import Account, Position, Balance, Quote, Instrument, Order, OptionChain
 from .exceptions import (
     SchwabAPIException,
@@ -18,14 +19,20 @@ from .exceptions import (
     UnauthorizedError,
     ForbiddenError,
     NotFoundError,
-    ServerError
+    ServerError,
+    ServiceUnavailableError,
+    ProxyAuthenticationError
 )
 
-__version__ = "2.0.1"
+__version__ = "2.1.0"
 __author__ = "SchwabPy Contributors"
 __all__ = [
     # Main client
     "SchwabClient",
+    # Auth
+    "AuthProvider",
+    "OAuthManager",
+    "StaticBearerAuth",
     # Models
     "Account",
     "Position",
@@ -46,4 +53,6 @@ __all__ = [
     "ForbiddenError",
     "NotFoundError",
     "ServerError",
+    "ServiceUnavailableError",
+    "ProxyAuthenticationError",
 ]

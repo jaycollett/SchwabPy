@@ -386,6 +386,46 @@ with SchwabClient(
 chmod 600 .schwab_tokens.json
 ```
 
+## Using a proxy
+
+If another service owns your Schwab OAuth tokens and forwards API calls for you, point the client at that service with `base_url` and authenticate with its API key through `StaticBearerAuth`. The proxy has to mirror Schwab's paths under its base URL, so `{base_url}/trader/v1/...` and `{base_url}/marketdata/v1/...` reach the matching Schwab endpoints.
+
+```python
+import os
+from schwabpy import SchwabClient, StaticBearerAuth
+
+client = SchwabClient(
+    base_url="https://broker.example.com/api/public/v1/schwab",
+    auth=StaticBearerAuth(os.environ["SCHWAB_PROXY_API_KEY"]),
+)
+
+numbers = client.accounts.get_account_numbers()
+quote = client.market_data.get_quote("AAPL")
+```
+
+With `StaticBearerAuth` the client sends `Authorization: Bearer <api_key>` on every request and does nothing else with auth. It never refreshes, never calls Schwab's OAuth endpoints, and never reads or writes `.schwab_tokens.json`. You don't need `client_id` or `client_secret`, and `authenticate()` raises `AuthenticationError` because sign-in happens at the proxy.
+
+Proxy errors come back as typed exceptions:
+
+- A 401 or 403 raises `ProxyAuthenticationError`. It subclasses both `AuthenticationError` and `APIError`, so existing handlers still catch it. `status_code`, `body` (the parsed JSON error, if any), and `error` (the body's `error` code) are on the exception.
+- A 503 raises `ServiceUnavailableError`, a subclass of `ServerError`, carrying `body`, `state`, `sign_in_url`, and `retry_after`. When the body's `error` is `token_unavailable` (the proxy has no usable Schwab token), the client raises right away without retrying, since a person usually has to sign in again.
+
+```python
+from schwabpy import ProxyAuthenticationError, ServiceUnavailableError
+
+try:
+    positions = client.accounts.get_positions(account_hash)
+except ServiceUnavailableError as e:
+    if e.sign_in_url:
+        print(f"Schwab needs a new sign-in ({e.state}): {e.sign_in_url}")
+    raise
+except ProxyAuthenticationError as e:
+    print(f"Proxy rejected the API key: {e.error}")
+    raise
+```
+
+`base_url` also works with the default OAuth mode if you need to send requests somewhere other than `https://api.schwabapi.com`. To plug in your own auth, pass any object with `get_headers()` (returns a dict of headers for each request) and `on_unauthorized(response)` (called on a 401 or 403; raise to replace the default error, or return to keep it). `schwabpy.AuthProvider` is the protocol.
+
 ## Rate Limits
 
 The Schwab API has rate limits, and this library includes **built-in rate limiting protection**:

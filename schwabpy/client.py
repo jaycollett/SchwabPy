@@ -7,11 +7,10 @@ import random
 import time
 from collections import deque
 from typing import Optional, Dict, Any
-from urllib.parse import urljoin
 
 import requests
 
-from .auth import OAuthManager
+from .auth import AuthProvider, OAuthManager
 from .accounts import Accounts
 from .market_data import MarketData
 from .orders import Orders
@@ -23,6 +22,7 @@ from .exceptions import (
     ForbiddenError,
     NotFoundError,
     ServerError,
+    ServiceUnavailableError,
     AuthenticationError
 )
 
@@ -41,12 +41,14 @@ class SchwabClient:
 
     def __init__(
         self,
-        client_id: str,
-        client_secret: str,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
         redirect_uri: str = "https://127.0.0.1",
         token_file: Optional[str] = None,
         timeout: int = 30,
-        rate_limit_per_minute: int = 120
+        rate_limit_per_minute: int = 120,
+        base_url: Optional[str] = None,
+        auth: Optional[AuthProvider] = None
     ):
         """
         Initialize Schwab API client.
@@ -58,6 +60,13 @@ class SchwabClient:
             token_file: Path to store OAuth tokens (default: .schwab_tokens.json)
             timeout: Request timeout in seconds (default: 30)
             rate_limit_per_minute: Maximum requests per minute (default: 120)
+            base_url: API root used for every request (default:
+                https://api.schwabapi.com). Set it to a proxy that mirrors
+                Schwab's /trader/v1 and /marketdata/v1 paths.
+            auth: Auth provider for requests. Defaults to an OAuthManager
+                built from client_id/client_secret. Pass StaticBearerAuth
+                to use a proxy API key; then client_id and client_secret
+                are not needed and no token file is read or written.
 
         Example:
             >>> client = SchwabClient(
@@ -65,24 +74,37 @@ class SchwabClient:
             ...     client_secret="YOUR_APP_SECRET",
             ...     redirect_uri="https://127.0.0.1"
             ... )
+            >>> proxied = SchwabClient(
+            ...     base_url="https://broker.example/api/public/v1/schwab",
+            ...     auth=StaticBearerAuth("YOUR_API_KEY")
+            ... )
         """
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
         self.timeout = timeout
+        self.base_url = (base_url or self.BASE_URL).rstrip('/')
 
         # Initialize rate limiting
         self._rate_limit_per_minute = rate_limit_per_minute
         self._request_times = deque(maxlen=rate_limit_per_minute)
 
-        # Initialize OAuth manager
-        self.auth = OAuthManager(
-            client_id=client_id,
-            client_secret=client_secret,
-            redirect_uri=redirect_uri,
-            token_file=token_file,
-            timeout=timeout
-        )
+        # Initialize auth: a supplied provider, or the file-backed OAuth manager
+        if auth is not None:
+            self.auth = auth
+        else:
+            # Only the call that used to be a TypeError (no credentials at all) is rejected
+            if client_id is None and client_secret is None:
+                raise ValueError(
+                    "client_id and client_secret are required unless an auth provider is given"
+                )
+            self.auth = OAuthManager(
+                client_id=client_id,
+                client_secret=client_secret,
+                redirect_uri=redirect_uri,
+                token_file=token_file,
+                timeout=timeout
+            )
 
         # Initialize session
         self._session = requests.Session()
@@ -96,7 +118,18 @@ class SchwabClient:
         self.market_data = MarketData(self)
         self.orders = Orders(self)
 
-        logger.info(f"Schwab API client initialized (rate limit: {rate_limit_per_minute}/min)")
+        logger.info(
+            f"Schwab API client initialized (base URL: {self.base_url}, "
+            f"rate limit: {rate_limit_per_minute}/min)"
+        )
+
+    def _require_oauth(self) -> OAuthManager:
+        """Return the OAuth manager, or raise if a different auth provider is in use."""
+        if not isinstance(self.auth, OAuthManager):
+            raise AuthenticationError(
+                f"OAuth sign-in is not available with {type(self.auth).__name__}"
+            )
+        return self.auth
 
     def authenticate(self):
         """
@@ -112,7 +145,7 @@ class SchwabClient:
             >>> # After visiting URL and getting redirected
             >>> client.authorize_from_callback("https://127.0.0.1/?code=...")
         """
-        auth_url = self.auth.get_authorization_url()
+        auth_url = self._require_oauth().get_authorization_url()
         print("\n" + "="*70)
         print("SCHWAB API AUTHENTICATION")
         print("="*70)
@@ -138,7 +171,7 @@ class SchwabClient:
         """
         try:
             code = OAuthManager.parse_callback_url(callback_url)
-            self.auth.fetch_access_token(code)
+            self._require_oauth().fetch_access_token(code)
             print("\n✓ Successfully authenticated!")
             print(f"✓ Tokens saved to: {self.auth.token_file}\n")
             logger.info("Authentication successful")
@@ -158,7 +191,7 @@ class SchwabClient:
             Successfully authenticated!
         """
         try:
-            self.auth.fetch_access_token(authorization_code)
+            self._require_oauth().fetch_access_token(authorization_code)
             print("\n✓ Successfully authenticated!")
             print(f"✓ Tokens saved to: {self.auth.token_file}\n")
             logger.info("Authentication successful")
@@ -223,20 +256,15 @@ class SchwabClient:
         # Enforce rate limiting
         self._check_rate_limit()
 
-        # Get valid access token (will refresh if needed)
+        # Get auth headers (OAuth refreshes the token here if needed)
         try:
-            access_token = self.auth.get_access_token()
+            headers = dict(self._auth_headers())
         except AuthenticationError as e:
             logger.error(f"Authentication error: {e}")
             raise
 
-        # Build URL
-        url = urljoin(self.BASE_URL, endpoint.lstrip('/'))
-
-        # Set authorization header
-        headers = {
-            'Authorization': f'Bearer {access_token}'
-        }
+        # Build URL by appending the endpoint to base_url (which may carry a path prefix)
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
 
         # Add Content-Type for requests with body
         if method in ['POST', 'PUT', 'PATCH'] and json is not None:
@@ -256,8 +284,10 @@ class SchwabClient:
                     logger.debug(f"Query params: {params}")
                 if json:
                     logger.debug(f"JSON body: {json}")
-                # Redact token in logs - only show length
-                logger.debug(f"Headers: Authorization=Bearer [token:{len(access_token)} chars]")
+                # Redact credentials in logs - only show length
+                logger.debug(
+                    f"Headers: Authorization=[redacted:{len(headers.get('Authorization', ''))} chars]"
+                )
 
                 response = self._session.request(
                     method=method,
@@ -298,6 +328,11 @@ class SchwabClient:
                 time.sleep(sleep_time)
 
             except ServerError as e:
+                # A proxy saying its Schwab token is unavailable will not recover
+                # within our backoff window; surface it right away.
+                if isinstance(e, ServiceUnavailableError) and e.error == 'token_unavailable':
+                    raise
+
                 # 5xx errors from server - retry these too
                 is_last_attempt = (attempt == max_retries)
 
@@ -351,14 +386,26 @@ class SchwabClient:
 
         # Error responses
         error_msg = f"API error {response.status_code}"
+        error_data = None
         try:
             error_data = response.json()
             if 'message' in error_data:
                 error_msg = error_data['message']
             elif 'error' in error_data:
                 error_msg = error_data['error']
+                if error_data.get('detail'):
+                    error_msg = f"{error_msg}: {error_data['detail']}"
         except ValueError:
             error_msg = response.text or error_msg
+        except TypeError:
+            # JSON body that is not an object (e.g. a list or string)
+            pass
+
+        # Let the auth provider replace the default 401/403 error
+        if response.status_code in (401, 403):
+            on_unauthorized = getattr(self.auth, 'on_unauthorized', None)
+            if on_unauthorized is not None:
+                on_unauthorized(response)
 
         # Raise specific exceptions based on status code
         if response.status_code == 400:
@@ -371,10 +418,19 @@ class SchwabClient:
             raise NotFoundError(error_msg, response.status_code, response)
         elif response.status_code == 429:
             raise RateLimitError(error_msg, response.status_code, response)
+        elif response.status_code == 503:
+            raise ServiceUnavailableError(error_msg, response.status_code, response, error_data)
         elif response.status_code >= 500:
             raise ServerError(error_msg, response.status_code, response)
         else:
             raise APIError(error_msg, response.status_code, response)
+
+    def _auth_headers(self) -> Dict[str, str]:
+        """Headers from the auth provider; falls back to get_access_token() for older providers."""
+        get_headers = getattr(self.auth, 'get_headers', None)
+        if get_headers is not None:
+            return get_headers()
+        return {'Authorization': f'Bearer {self.auth.get_access_token()}'}
 
     def get(self, endpoint: str, params: Optional[Dict] = None, **kwargs) -> Any:
         """Make a GET request."""
@@ -418,4 +474,7 @@ class SchwabClient:
 
     def __repr__(self) -> str:
         """String representation of the client."""
-        return f"SchwabClient(client_id='{self.client_id[:8]}...', authenticated={bool(self.auth._access_token)})"
+        if isinstance(self.auth, OAuthManager):
+            client_id = (self.client_id or '')[:8]
+            return f"SchwabClient(client_id='{client_id}...', authenticated={bool(self.auth._access_token)})"
+        return f"SchwabClient(base_url='{self.base_url}', auth={type(self.auth).__name__})"
